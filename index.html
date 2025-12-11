@@ -1,65 +1,414 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sky Runner - Platform Adventure</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <title>Down Is Broken - Base Prototype</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #050814;
+      color: #e0f4ff;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    #ui {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      font-size: 14px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 6px 10px;
+      border-radius: 4px;
+    }
+    canvas {
+      display: block;
+      background: #050814;
+    }
+  </style>
 </head>
 <body>
-    <div class="game-container">
-        <div class="game-header">
-            <h1>Sky Runner</h1>
-            <div class="stats">
-                <span id="score">Score: 0</span>
-                <span id="lives">Lives: 3</span>
-                <span id="level">Level: 1</span>
-            </div>
-        </div>
+<div id="ui">
+  <div>Down Is Broken – Base Prototype</div>
+  <div>Move: A/D or Left/Right</div>
+  <div>Jump: Space</div>
+  <div>Flip Gravity: W/Up = Up, S/Down = Down, Q = Left, E = Right</div>
+  <div id="gravityDir"></div>
+  <div id="overheat"></div>
+  <div id="pulse"></div>
+</div>
+<canvas id="game"></canvas>
 
-        <canvas id="gameCanvas" width="800" height="500"></canvas>
+<script>
+// ===============================
+// Basic Config
+// ===============================
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-        <div class="game-controls">
-            <div class="instructions">
-                <h3>Controls</h3>
-                <p><kbd>Arrow Left</kbd> / <kbd>A</kbd> - Move Left</p>
-                <p><kbd>Arrow Right</kbd> / <kbd>D</kbd> - Move Right</p>
-                <p><kbd>Space</kbd> / <kbd>W</kbd> / <kbd>Arrow Up</kbd> - Jump</p>
-                <p><kbd>P</kbd> - Pause Game</p>
-            </div>
-            <div class="game-buttons">
-                <button id="startBtn" onclick="game.start()">Start Game</button>
-                <button id="pauseBtn" onclick="game.togglePause()">Pause</button>
-                <button id="restartBtn" onclick="game.restart()">Restart</button>
-            </div>
-        </div>
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
-        <div id="gameOverScreen" class="overlay hidden">
-            <div class="overlay-content">
-                <h2>Game Over</h2>
-                <p>Final Score: <span id="finalScore">0</span></p>
-                <button onclick="game.restart()">Play Again</button>
-            </div>
-        </div>
+// ===============================
+// Input
+// ===============================
+const keys = {};
+window.addEventListener("keydown", (e) => {
+  keys[e.code] = true;
+  // Prevent arrow keys/space from scrolling
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) {
+    e.preventDefault();
+  }
+});
+window.addEventListener("keyup", (e) => {
+  keys[e.code] = false;
+});
 
-        <div id="winScreen" class="overlay hidden">
-            <div class="overlay-content">
-                <h2>Congratulations!</h2>
-                <p>You completed all levels!</p>
-                <p>Final Score: <span id="winScore">0</span></p>
-                <button onclick="game.restart()">Play Again</button>
-            </div>
-        </div>
+// ===============================
+// Game State
+// ===============================
+const GRAVITY_STRENGTH = 1200; // px/s^2
+const MOVE_SPEED = 260;       // px/s
+const JUMP_STRENGTH = 450;    // base jump impulse
+const MAX_OVERHEAT = 100;
+const OVERHEAT_PER_FLIP = 30;
+const OVERHEAT_COOLDOWN_PER_SEC = 25;
 
-        <div id="startScreen" class="overlay">
-            <div class="overlay-content">
-                <h2>Sky Runner</h2>
-                <p>Collect coins, avoid enemies, reach the flag!</p>
-                <button onclick="game.start()">Start Game</button>
-            </div>
-        </div>
-    </div>
+// Gravity pulses (station interference)
+const PULSE_INTERVAL_MIN = 4;  // seconds
+const PULSE_INTERVAL_MAX = 8;  // seconds
+const PULSE_DURATION = 1.5;    // seconds
 
-    <script src="game.js"></script>
+// Simple enum-ish
+const GRAVITY_DIRS = ["DOWN", "UP", "LEFT", "RIGHT"];
+
+const state = {
+  player: {
+    x: 200,
+    y: 200,
+    w: 32,
+    h: 32,
+    vx: 0,
+    vy: 0,
+    // used to detect "grounded" along gravity axis
+    onGround: false,
+  },
+  gravityDir: "DOWN",
+  overheat: 0,
+  lastFlipTime: 0,
+  time: 0,
+  pulse: {
+    active: false,
+    forcedDir: "DOWN",
+    nextPulseTime: 0,
+    endTime: 0
+  },
+  levelExit: {
+    x: 0,
+    y: 0,
+    w: 40,
+    h: 80
+  },
+  levelCompleted: false,
+};
+
+// Simple platforms (rectangles)
+const platforms = [];
+
+// ===============================
+// Level Setup
+// ===============================
+function setupLevel() {
+  platforms.length = 0;
+  state.levelCompleted = false;
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Ground / ceiling / walls
+  platforms.push({x: 0, y: h - 40, w: w, h: 40});      // floor
+  platforms.push({x: 0, y: 0, w: w, h: 30});            // ceiling
+  platforms.push({x: 0, y: 0, w: 40, h: h});            // left wall
+  platforms.push({x: w - 40, y: 0, w: 40, h: h});       // right wall
+
+  // Some mid-level platforms
+  platforms.push({x: 150, y: h - 160, w: 200, h: 20});
+  platforms.push({x: w / 2 - 100, y: h - 260, w: 200, h: 20});
+  platforms.push({x: w - 320, y: h - 360, w: 240, h: 20});
+
+  // Exit "hole in the wall" – most of the time: hole on the right wall
+  state.levelExit.w = 40;
+  state.levelExit.h = 80;
+  state.levelExit.x = w - 40;               // same x as right wall
+  state.levelExit.y = h / 2 - 40;           // somewhere mid-height
+
+  // Place player near lower-left
+  state.player.x = 80;
+  state.player.y = h - 100;
+  state.player.vx = 0;
+  state.player.vy = 0;
+
+  setupNextPulse(state.time);
+}
+
+function randomRange(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function setupNextPulse(currentTime) {
+  const dt = randomRange(PULSE_INTERVAL_MIN, PULSE_INTERVAL_MAX);
+  state.pulse.nextPulseTime = currentTime + dt;
+}
+
+// ===============================
+// Gravity / Physics Helpers
+// ===============================
+function getGravityVector(dir) {
+  switch (dir) {
+    case "DOWN":  return {gx: 0, gy: 1};
+    case "UP":    return {gx: 0, gy: -1};
+    case "LEFT":  return {gx: -1, gy: 0};
+    case "RIGHT": return {gx: 1, gy: 0};
+    default:      return {gx: 0, gy: 1};
+  }
+}
+
+function tryFlipGravity(targetDir, dt) {
+  if (!GRAVITY_DIRS.includes(targetDir)) return;
+
+  // During pulse, you cannot flip
+  if (state.pulse.active) return;
+
+  // If overheated, cannot flip
+  if (state.overheat >= MAX_OVERHEAT) return;
+
+  if (state.gravityDir !== targetDir) {
+    state.gravityDir = targetDir;
+    state.overheat = Math.min(MAX_OVERHEAT, state.overheat + OVERHEAT_PER_FLIP);
+  }
+}
+
+// Simple AABB overlap test
+function aabbOverlap(a, b) {
+  return !(
+    a.x + a.w <= b.x ||
+    a.x >= b.x + b.w ||
+    a.y + a.h <= b.y ||
+    a.y >= b.y + b.h
+  );
+}
+
+// Resolve collisions by minimal translation vector
+function resolveCollisions() {
+  const p = state.player;
+  p.onGround = false;
+
+  for (const plat of platforms) {
+    if (!aabbOverlap(p, plat)) continue;
+
+    const overlapX1 = plat.x + plat.w - p.x;       // plat right - player left
+    const overlapX2 = p.x + p.w - plat.x;          // player right - plat left
+    const overlapY1 = plat.y + plat.h - p.y;       // plat bottom - player top
+    const overlapY2 = p.y + p.h - plat.y;          // player bottom - plat top
+
+    const minXOverlap = Math.min(overlapX1, overlapX2);
+    const minYOverlap = Math.min(overlapY1, overlapY2);
+
+    if (minXOverlap < minYOverlap) {
+      // Resolve in X
+      if (overlapX1 < overlapX2) {
+        // push player left
+        p.x = plat.x + plat.w;
+      } else {
+        // push player right
+        p.x = plat.x - p.w;
+      }
+      p.vx = 0;
+    } else {
+      // Resolve in Y
+      if (overlapY1 < overlapY2) {
+        // push player up
+        p.y = plat.y + plat.h;
+        if (state.gravityDir === "UP") {
+          p.onGround = true;
+        }
+      } else {
+        // push player down
+        p.y = plat.y - p.h;
+        if (state.gravityDir === "DOWN") {
+          p.onGround = true;
+        }
+      }
+
+      // If gravity is LEFT/RIGHT, also treat vertical resolution as "ground"
+      if (state.gravityDir === "LEFT" || state.gravityDir === "RIGHT") {
+        p.onGround = true;
+      }
+
+      p.vy = 0;
+    }
+  }
+}
+
+// ===============================
+// Game Loop
+// ===============================
+let lastTime = performance.now();
+setupLevel();
+
+function update(dt) {
+  const p = state.player;
+
+  state.time += dt;
+
+  // --- Gravity pulses (partial control) ---
+  if (!state.pulse.active && state.time >= state.pulse.nextPulseTime) {
+    // Start pulse
+    state.pulse.active = true;
+    state.pulse.endTime = state.time + PULSE_DURATION;
+    // Choose a random forced gravity direction
+    const randomDir = GRAVITY_DIRS[Math.floor(Math.random() * GRAVITY_DIRS.length)];
+    state.pulse.forcedDir = randomDir;
+    state.gravityDir = randomDir; // override immediately
+  } else if (state.pulse.active && state.time >= state.pulse.endTime) {
+    // End pulse
+    state.pulse.active = false;
+    setupNextPulse(state.time);
+  }
+
+  // --- Overheat cooldown ---
+  if (state.overheat > 0) {
+    state.overheat = Math.max(0, state.overheat - OVERHEAT_COOLDOWN_PER_SEC * dt);
+  }
+
+  // --- Handle input (only if not in pulse) ---
+  if (!state.pulse.active) {
+    // Movement
+    let moveInput = 0;
+    if (keys["ArrowLeft"] || keys["KeyA"]) moveInput -= 1;
+    if (keys["ArrowRight"] || keys["KeyD"]) moveInput += 1;
+
+    // Movement relative to current gravity direction
+    // For simplicity, treat LEFT/RIGHT as "tangential" for all gravity directions
+    if (state.gravityDir === "DOWN" || state.gravityDir === "UP") {
+      p.vx = moveInput * MOVE_SPEED;
+    } else if (state.gravityDir === "LEFT" || state.gravityDir === "RIGHT") {
+      // When gravity is horizontal, let A/D move along Y
+      p.vy = moveInput * MOVE_SPEED;
+    }
+
+    // Jump (Space) – jumps opposite to gravity direction
+    if ((keys["Space"] || keys["KeyW"] || keys["ArrowUp"]) && p.onGround) {
+      const { gx, gy } = getGravityVector(state.gravityDir);
+      // impulse opposite gravity
+      p.vx -= gx * JUMP_STRENGTH;
+      p.vy -= gy * JUMP_STRENGTH;
+    }
+
+    // Gravity flip controls – partial, affected by overheat
+    if (keys["ArrowUp"] || keys["KeyW"]) {
+      tryFlipGravity("UP", dt);
+    } else if (keys["ArrowDown"] || keys["KeyS"]) {
+      tryFlipGravity("DOWN", dt);
+    } else if (keys["KeyQ"]) {
+      tryFlipGravity("LEFT", dt);
+    } else if (keys["KeyE"]) {
+      tryFlipGravity("RIGHT", dt);
+    }
+  } else {
+    // During pulse, maintain forced direction
+    state.gravityDir = state.pulse.forcedDir;
+  }
+
+  // --- Apply gravity ---
+  const { gx, gy } = getGravityVector(state.gravityDir);
+  p.vx += gx * GRAVITY_STRENGTH * dt;
+  p.vy += gy * GRAVITY_STRENGTH * dt;
+
+  // --- Integrate position ---
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+
+  // --- Collisions ---
+  resolveCollisions();
+
+  // --- Check exit (hole in wall) ---
+  if (aabbOverlap(p, state.levelExit) && !state.levelCompleted) {
+    state.levelCompleted = true;
+    console.log("Level complete! (Exiting through hole in the wall)");
+    // For now, just reset the level after a short delay
+    setTimeout(() => {
+      setupLevel();
+    }, 1000);
+  }
+
+  // --- UI text ---
+  document.getElementById("gravityDir").textContent =
+    "Gravity: " + state.gravityDir +
+    (state.pulse.active ? " (FORCED)" : "");
+  document.getElementById("overheat").textContent =
+    "Overheat: " + Math.round(state.overheat) + " / " + MAX_OVERHEAT;
+  document.getElementById("pulse").textContent =
+    state.pulse.active
+      ? "Pulse: ACTIVE"
+      : "Next pulse in ~" + Math.max(0, (state.pulse.nextPulseTime - state.time)).toFixed(1) + "s";
+}
+
+function draw() {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = "#050814";
+  ctx.fillRect(0, 0, w, h);
+
+  // Platforms
+  ctx.fillStyle = "#1d2638";
+  for (const plat of platforms) {
+    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+  }
+
+  // Exit hole in the wall
+  ctx.fillStyle = state.levelCompleted ? "#44ff88" : "#44d9ff";
+  ctx.fillRect(state.levelExit.x, state.levelExit.y, state.levelExit.w, state.levelExit.h);
+
+  // Player
+  const p = state.player;
+  ctx.fillStyle = "#fffa5c";
+  ctx.fillRect(p.x, p.y, p.w, p.h);
+
+  // Overheat bar
+  const barWidth = 150;
+  const barHeight = 10;
+  const overheatRatio = state.overheat / MAX_OVERHEAT;
+  ctx.strokeStyle = "#ffffff";
+  ctx.strokeRect(10, canvas.height - 20, barWidth, barHeight);
+  ctx.fillStyle = overheatRatio < 0.7 ? "#44ff88" : (overheatRatio < 1.0 ? "#ffcc44" : "#ff4444");
+  ctx.fillRect(10, canvas.height - 20, barWidth * overheatRatio, barHeight);
+
+  // Pulse indicator overlay
+  if (state.pulse.active) {
+    ctx.fillStyle = "rgba(255, 80, 80, 0.15)";
+    ctx.fillRect(0, 0, w, h);
+  }
+}
+
+function loop(now) {
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  update(dt);
+  draw();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
 </body>
 </html>
