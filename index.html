@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sky Runner - Platform Adventure</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-header">
+            <h1>Sky Runner</h1>
+            <div class="stats">
+                <span id="score">Score: 0</span>
+                <span id="lives">Lives: 3</span>
+                <span id="level">Level: 1</span>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+        <div class="game-controls">
+            <div class="instructions">
+                <h3>Controls</h3>
+                <p><kbd>Arrow Left</kbd> / <kbd>A</kbd> - Move Left</p>
+                <p><kbd>Arrow Right</kbd> / <kbd>D</kbd> - Move Right</p>
+                <p><kbd>Space</kbd> / <kbd>W</kbd> / <kbd>Arrow Up</kbd> - Jump</p>
+                <p><kbd>P</kbd> - Pause Game</p>
+            </div>
+            <div class="game-buttons">
+                <button id="startBtn" onclick="game.start()">Start Game</button>
+                <button id="pauseBtn" onclick="game.togglePause()">Pause</button>
+                <button id="restartBtn" onclick="game.restart()">Restart</button>
+            </div>
+        </div>
+
+        <div id="gameOverScreen" class="overlay hidden">
+            <div class="overlay-content">
+                <h2>Game Over</h2>
+                <p>Final Score: <span id="finalScore">0</span></p>
+                <button onclick="game.restart()">Play Again</button>
+            </div>
+        </div>
+
+        <div id="winScreen" class="overlay hidden">
+            <div class="overlay-content">
+                <h2>Congratulations!</h2>
+                <p>You completed all levels!</p>
+                <p>Final Score: <span id="winScore">0</span></p>
+                <button onclick="game.restart()">Play Again</button>
+            </div>
+        </div>
+
+        <div id="startScreen" class="overlay">
+            <div class="overlay-content">
+                <h2>Sky Runner</h2>
+                <p>Collect coins, avoid enemies, reach the flag!</p>
+                <button onclick="game.start()">Start Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
