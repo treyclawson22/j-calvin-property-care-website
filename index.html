@@ -59,7 +59,6 @@ resizeCanvas();
 const keys = {};
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
-  // Prevent arrow keys/space from scrolling
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) {
     e.preventDefault();
   }
@@ -71,19 +70,17 @@ window.addEventListener("keyup", (e) => {
 // ===============================
 // Game State
 // ===============================
-const GRAVITY_STRENGTH = 1200; // px/s^2
-const MOVE_SPEED = 260;       // px/s
-const JUMP_STRENGTH = 450;    // base jump impulse
+const GRAVITY_STRENGTH = 1200;
+const MOVE_SPEED = 260;
+const JUMP_STRENGTH = 450;
 const MAX_OVERHEAT = 100;
 const OVERHEAT_PER_FLIP = 30;
 const OVERHEAT_COOLDOWN_PER_SEC = 25;
 
-// Gravity pulses (station interference)
-const PULSE_INTERVAL_MIN = 4;  // seconds
-const PULSE_INTERVAL_MAX = 8;  // seconds
-const PULSE_DURATION = 1.5;    // seconds
+const PULSE_INTERVAL_MIN = 4;
+const PULSE_INTERVAL_MAX = 8;
+const PULSE_DURATION = 1.5;
 
-// Simple enum-ish
 const GRAVITY_DIRS = ["DOWN", "UP", "LEFT", "RIGHT"];
 
 const state = {
@@ -94,7 +91,6 @@ const state = {
     h: 32,
     vx: 0,
     vy: 0,
-    // used to detect "grounded" along gravity axis
     onGround: false,
   },
   gravityDir: "DOWN",
@@ -116,7 +112,6 @@ const state = {
   levelCompleted: false,
 };
 
-// Simple platforms (rectangles)
 const platforms = [];
 
 // ===============================
@@ -129,24 +124,20 @@ function setupLevel() {
   const w = canvas.width;
   const h = canvas.height;
 
-  // Ground / ceiling / walls
-  platforms.push({x: 0, y: h - 40, w: w, h: 40});      // floor
-  platforms.push({x: 0, y: 0, w: w, h: 30});            // ceiling
-  platforms.push({x: 0, y: 0, w: 40, h: h});            // left wall
-  platforms.push({x: w - 40, y: 0, w: 40, h: h});       // right wall
+  platforms.push({x: 0, y: h - 40, w: w, h: 40});
+  platforms.push({x: 0, y: 0, w: w, h: 30});
+  platforms.push({x: 0, y: 0, w: 40, h: h});
+  platforms.push({x: w - 40, y: 0, w: 40, h: h});
 
-  // Some mid-level platforms
   platforms.push({x: 150, y: h - 160, w: 200, h: 20});
   platforms.push({x: w / 2 - 100, y: h - 260, w: 200, h: 20});
   platforms.push({x: w - 320, y: h - 360, w: 240, h: 20});
 
-  // Exit "hole in the wall" – most of the time: hole on the right wall
   state.levelExit.w = 40;
   state.levelExit.h = 80;
-  state.levelExit.x = w - 40;               // same x as right wall
-  state.levelExit.y = h / 2 - 40;           // somewhere mid-height
+  state.levelExit.x = w - 40;
+  state.levelExit.y = h / 2 - 40;
 
-  // Place player near lower-left
   state.player.x = 80;
   state.player.y = h - 100;
   state.player.vx = 0;
@@ -179,11 +170,7 @@ function getGravityVector(dir) {
 
 function tryFlipGravity(targetDir, dt) {
   if (!GRAVITY_DIRS.includes(targetDir)) return;
-
-  // During pulse, you cannot flip
   if (state.pulse.active) return;
-
-  // If overheated, cannot flip
   if (state.overheat >= MAX_OVERHEAT) return;
 
   if (state.gravityDir !== targetDir) {
@@ -192,7 +179,6 @@ function tryFlipGravity(targetDir, dt) {
   }
 }
 
-// Simple AABB overlap test
 function aabbOverlap(a, b) {
   return !(
     a.x + a.w <= b.x ||
@@ -202,7 +188,6 @@ function aabbOverlap(a, b) {
   );
 }
 
-// Resolve collisions by minimal translation vector
 function resolveCollisions() {
   const p = state.player;
   p.onGround = false;
@@ -210,41 +195,34 @@ function resolveCollisions() {
   for (const plat of platforms) {
     if (!aabbOverlap(p, plat)) continue;
 
-    const overlapX1 = plat.x + plat.w - p.x;       // plat right - player left
-    const overlapX2 = p.x + p.w - plat.x;          // player right - plat left
-    const overlapY1 = plat.y + plat.h - p.y;       // plat bottom - player top
-    const overlapY2 = p.y + p.h - plat.y;          // player bottom - plat top
+    const overlapX1 = plat.x + plat.w - p.x;
+    const overlapX2 = p.x + p.w - plat.x;
+    const overlapY1 = plat.y + plat.h - p.y;
+    const overlapY2 = p.y + p.h - plat.y;
 
     const minXOverlap = Math.min(overlapX1, overlapX2);
     const minYOverlap = Math.min(overlapY1, overlapY2);
 
     if (minXOverlap < minYOverlap) {
-      // Resolve in X
       if (overlapX1 < overlapX2) {
-        // push player left
         p.x = plat.x + plat.w;
       } else {
-        // push player right
         p.x = plat.x - p.w;
       }
       p.vx = 0;
     } else {
-      // Resolve in Y
       if (overlapY1 < overlapY2) {
-        // push player up
         p.y = plat.y + plat.h;
         if (state.gravityDir === "UP") {
           p.onGround = true;
         }
       } else {
-        // push player down
         p.y = plat.y - p.h;
         if (state.gravityDir === "DOWN") {
           p.onGround = true;
         }
       }
 
-      // If gravity is LEFT/RIGHT, also treat vertical resolution as "ground"
       if (state.gravityDir === "LEFT" || state.gravityDir === "RIGHT") {
         p.onGround = true;
       }
@@ -265,51 +243,38 @@ function update(dt) {
 
   state.time += dt;
 
-  // --- Gravity pulses (partial control) ---
   if (!state.pulse.active && state.time >= state.pulse.nextPulseTime) {
-    // Start pulse
     state.pulse.active = true;
     state.pulse.endTime = state.time + PULSE_DURATION;
-    // Choose a random forced gravity direction
     const randomDir = GRAVITY_DIRS[Math.floor(Math.random() * GRAVITY_DIRS.length)];
     state.pulse.forcedDir = randomDir;
-    state.gravityDir = randomDir; // override immediately
+    state.gravityDir = randomDir;
   } else if (state.pulse.active && state.time >= state.pulse.endTime) {
-    // End pulse
     state.pulse.active = false;
     setupNextPulse(state.time);
   }
 
-  // --- Overheat cooldown ---
   if (state.overheat > 0) {
     state.overheat = Math.max(0, state.overheat - OVERHEAT_COOLDOWN_PER_SEC * dt);
   }
 
-  // --- Handle input (only if not in pulse) ---
   if (!state.pulse.active) {
-    // Movement
     let moveInput = 0;
     if (keys["ArrowLeft"] || keys["KeyA"]) moveInput -= 1;
     if (keys["ArrowRight"] || keys["KeyD"]) moveInput += 1;
 
-    // Movement relative to current gravity direction
-    // For simplicity, treat LEFT/RIGHT as "tangential" for all gravity directions
     if (state.gravityDir === "DOWN" || state.gravityDir === "UP") {
       p.vx = moveInput * MOVE_SPEED;
     } else if (state.gravityDir === "LEFT" || state.gravityDir === "RIGHT") {
-      // When gravity is horizontal, let A/D move along Y
       p.vy = moveInput * MOVE_SPEED;
     }
 
-    // Jump (Space) – jumps opposite to gravity direction
-    if ((keys["Space"] || keys["KeyW"] || keys["ArrowUp"]) && p.onGround) {
+    if ((keys["Space"]) && p.onGround) {
       const { gx, gy } = getGravityVector(state.gravityDir);
-      // impulse opposite gravity
       p.vx -= gx * JUMP_STRENGTH;
       p.vy -= gy * JUMP_STRENGTH;
     }
 
-    // Gravity flip controls – partial, affected by overheat
     if (keys["ArrowUp"] || keys["KeyW"]) {
       tryFlipGravity("UP", dt);
     } else if (keys["ArrowDown"] || keys["KeyS"]) {
@@ -320,33 +285,25 @@ function update(dt) {
       tryFlipGravity("RIGHT", dt);
     }
   } else {
-    // During pulse, maintain forced direction
     state.gravityDir = state.pulse.forcedDir;
   }
 
-  // --- Apply gravity ---
   const { gx, gy } = getGravityVector(state.gravityDir);
   p.vx += gx * GRAVITY_STRENGTH * dt;
   p.vy += gy * GRAVITY_STRENGTH * dt;
 
-  // --- Integrate position ---
   p.x += p.vx * dt;
   p.y += p.vy * dt;
 
-  // --- Collisions ---
   resolveCollisions();
 
-  // --- Check exit (hole in wall) ---
   if (aabbOverlap(p, state.levelExit) && !state.levelCompleted) {
     state.levelCompleted = true;
-    console.log("Level complete! (Exiting through hole in the wall)");
-    // For now, just reset the level after a short delay
     setTimeout(() => {
       setupLevel();
     }, 1000);
   }
 
-  // --- UI text ---
   document.getElementById("gravityDir").textContent =
     "Gravity: " + state.gravityDir +
     (state.pulse.active ? " (FORCED)" : "");
@@ -363,26 +320,21 @@ function draw() {
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  // Background
   ctx.fillStyle = "#050814";
   ctx.fillRect(0, 0, w, h);
 
-  // Platforms
   ctx.fillStyle = "#1d2638";
   for (const plat of platforms) {
     ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
   }
 
-  // Exit hole in the wall
   ctx.fillStyle = state.levelCompleted ? "#44ff88" : "#44d9ff";
   ctx.fillRect(state.levelExit.x, state.levelExit.y, state.levelExit.w, state.levelExit.h);
 
-  // Player
   const p = state.player;
   ctx.fillStyle = "#fffa5c";
   ctx.fillRect(p.x, p.y, p.w, p.h);
 
-  // Overheat bar
   const barWidth = 150;
   const barHeight = 10;
   const overheatRatio = state.overheat / MAX_OVERHEAT;
@@ -391,7 +343,6 @@ function draw() {
   ctx.fillStyle = overheatRatio < 0.7 ? "#44ff88" : (overheatRatio < 1.0 ? "#ffcc44" : "#ff4444");
   ctx.fillRect(10, canvas.height - 20, barWidth * overheatRatio, barHeight);
 
-  // Pulse indicator overlay
   if (state.pulse.active) {
     ctx.fillStyle = "rgba(255, 80, 80, 0.15)";
     ctx.fillRect(0, 0, w, h);
